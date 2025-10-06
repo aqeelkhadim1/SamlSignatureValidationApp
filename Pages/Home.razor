@@ -1,0 +1,72 @@
+﻿@page "/"
+
+<PageTitle>Home</PageTitle>
+
+<h1>SAML Signature Validation</h1>
+
+<EditForm Model="this" OnValidSubmit="OnSubmit">
+    <div class="mb-3">
+        <label class="form-label">SAML XML</label>
+        <textarea class="form-control" @bind="samlXml" rows="10"></textarea>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">X.509 Certificate (PEM or Base64)</label>
+        <textarea class="form-control" @bind="x509Pem" rows="6"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit" disabled="@isSubmitting">Validate</button>
+</EditForm>
+
+@if (resultMessage is not null)
+{
+    <div class="mt-3 alert @(resultIsValid ? "alert-success" : "alert-danger")">@resultMessage</div>
+}
+
+@code {
+    private string samlXml = string.Empty;
+    private string x509Pem = string.Empty;
+    private string? resultMessage;
+    private bool resultIsValid;
+    private bool isSubmitting;
+
+    private async Task OnSubmit()
+    {
+        isSubmitting = true;
+        resultMessage = null;
+        StateHasChanged();
+        try
+        {
+            var client = Http;
+            var payload = new { SamlXml = samlXml, X509CertPem = x509Pem };
+            var response = await client.PostAsJsonAsync("/api/validate", payload);
+            var body = await response.Content.ReadFromJsonAsync<ValidationResponse>();
+            if (body is not null)
+            {
+                resultIsValid = body.IsValid;
+                resultMessage = body.IsValid ? "Signature is valid" : ($"Invalid: {body.Reason}");
+            }
+            else
+            {
+                resultIsValid = false;
+                resultMessage = "Unexpected empty response";
+            }
+        }
+        catch (Exception ex)
+        {
+            resultIsValid = false;
+            resultMessage = ex.Message;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    [Inject]
+    private HttpClient Http { get; set; } = default!;
+
+    private class ValidationResponse
+    {
+        public bool IsValid { get; set; }
+        public string? Reason { get; set; }
+    }
+}

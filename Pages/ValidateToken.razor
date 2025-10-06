@@ -1,0 +1,83 @@
+@page "/validate-token"
+
+<PageTitle>Validate Token</PageTitle>
+
+<h3>Validate Base64 SAML Token</h3>
+
+<EditForm Model="this" OnValidSubmit="OnSubmit">
+    <div class="mb-3">
+        <label class="form-label">Base64 SAML (Token)</label>
+        <textarea class="form-control" @bind="tokenBase64" rows="10"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit" disabled="@isSubmitting">Validate</button>
+</EditForm>
+
+@if (resultMessage is not null)
+{
+    <div class="mt-3 alert @(resultIsValid ? "alert-success" : "alert-danger")">@resultMessage</div>
+}
+
+@code {
+    private string tokenBase64 = string.Empty;
+    private string? resultMessage;
+    private bool resultIsValid;
+    private bool isSubmitting;
+
+    [Inject]
+    private HttpClient Http { get; set; } = default!;
+
+    private async Task OnSubmit()
+    {
+        isSubmitting = true;
+        resultMessage = null;
+        StateHasChanged();
+        try
+        {
+            var payload = new ValidationRequestPayload { Token = tokenBase64 };
+
+            var response = await Http.PostAsJsonAsync("/api/validate", payload);
+            ValidationResponse? body = null;
+            try
+            {
+                body = await response.Content.ReadFromJsonAsync<ValidationResponse>();
+            }
+            catch
+            {
+                // fall through
+            }
+            if (body is not null)
+            {
+                resultIsValid = body.IsValid;
+                resultMessage = body.IsValid ? "Signature is valid" : ($"Invalid: {body.Reason}");
+            }
+            else
+            {
+                var raw = await response.Content.ReadAsStringAsync();
+                resultIsValid = false;
+                resultMessage = string.IsNullOrWhiteSpace(raw) ? "Unexpected empty response" : raw;
+            }
+        }
+        catch (Exception ex)
+        {
+            resultIsValid = false;
+            resultMessage = ex.Message;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private class ValidationResponse
+    {
+        public bool IsValid { get; set; }
+        public string? Reason { get; set; }
+    }
+
+    private class ValidationRequestPayload
+    {
+        public string? Token { get; set; }
+    }
+}
+
+
